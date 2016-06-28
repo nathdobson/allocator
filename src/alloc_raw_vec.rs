@@ -8,18 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use core::ptr::Unique;
-use core::mem;
-use core::slice;
+use std::mem;
+use std::ptr;
+use std::slice;
+use std::cmp;
 use alloc::oom;
-use std::boxed::Box;
-use core::ops::Drop;
-use core::cmp;
-use allocator::OwnedAllocator;
-use alloc::heap::EMPTY;
+use alloc::heap;
+use std::ptr::Unique;
 use util::PowerOfTwo;
+use allocator::OwnedAllocator;
 use alloc_box::AllocBox;
-use std::ptr::read;
 
 pub struct AllocRawVec<T, A: OwnedAllocator> {
     ptr: Unique<T>,
@@ -35,7 +33,7 @@ impl<T, A: OwnedAllocator> AllocRawVec<T, A> {
 
             // heap::EMPTY doubles as "unallocated" and "zero-sized allocation"
             AllocRawVec {
-                ptr: Unique::new(EMPTY as *mut T),
+                ptr: Unique::new(heap::EMPTY as *mut T),
                 cap: cap,
                 alloc: alloc,
             }
@@ -140,7 +138,10 @@ impl<T, A: OwnedAllocator> AllocRawVec<T, A> {
                 self.alloc.allocate(new_alloc_size, PowerOfTwo::align_of::<T>())
             } else {
                 self.alloc
-                    .reallocate(self.ptr.get_mut() as *mut T as *mut u8, self.cap * elem_size, new_alloc_size, PowerOfTwo::align_of::<T>())
+                    .reallocate(self.ptr.get_mut() as *mut T as *mut u8,
+                                self.cap * elem_size,
+                                new_alloc_size,
+                                PowerOfTwo::align_of::<T>())
             };
 
             // If allocate or reallocate fail, we'll get `null` back
@@ -186,7 +187,7 @@ impl<T, A: OwnedAllocator> AllocRawVec<T, A> {
     pub unsafe fn into_box(mut self) -> AllocBox<[T], A> {
         // NOTE: not calling `cap()` here, actually using the real `cap` field!
         let slice: *mut [T] = slice::from_raw_parts_mut(self.ptr(), self.cap);
-        let output: AllocBox<[T], A> = AllocBox::from_raw_parts(slice,read(&mut self.alloc as *mut A));
+        let output: AllocBox<[T], A> = AllocBox::from_raw_parts(slice, ptr::read(&mut self.alloc as *mut A));
         mem::forget(self);
         output
     }
@@ -196,8 +197,6 @@ impl<T, A: OwnedAllocator> Drop for AllocRawVec<T, A> {
     fn drop(&mut self) {
         let elem_size = mem::size_of::<T>();
         if elem_size != 0 && self.cap != 0 {
-            let align = mem::align_of::<T>();
-
             let num_bytes = elem_size * self.cap;
             unsafe {
                 self.alloc.deallocate(*self.ptr as *mut _, num_bytes, PowerOfTwo::align_of::<T>());

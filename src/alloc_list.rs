@@ -1,6 +1,6 @@
 use allocator::OwnedAllocator;
 use std::ptr::Unique;
-use std::mem::replace;
+use std::mem;
 use alloc_raw_box::AllocRawBox;
 pub struct List<T, A: OwnedAllocator> {
     alloc: A,

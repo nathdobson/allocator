@@ -1,10 +1,7 @@
-use allocator::Allocator;
 use allocator::OwnedAllocator;
 use util::PowerOfTwo;
-use std::ptr::copy_nonoverlapping;
 use std::mem::size_of;
 use std::ptr::null_mut;
-use std::slice::Iter;
 use allocator::ShareableAllocator;
 use std::ptr::write;
 pub enum MockAllocResult {
@@ -22,25 +19,25 @@ impl MockAlloc {
     }
 }
 unsafe impl OwnedAllocator for MockAlloc {
-    unsafe fn deallocate(&mut self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) {
+    unsafe fn deallocate(&mut self, _ptr: *mut u8, _old_size: usize, _align: PowerOfTwo) {
         match self.schedule.remove(0) {
             MockAllocResult::Deallocate => (),
             _ => panic!(),
         }
     }
-    unsafe fn allocate(&mut self, size: usize, align: PowerOfTwo) -> *mut u8 {
+    unsafe fn allocate(&mut self, _size: usize, _align: PowerOfTwo) -> *mut u8 {
         match self.schedule.remove(0) {
             MockAllocResult::Allocate(ptr) => ptr,
             _ => panic!(),
         }
     }
-    unsafe fn reallocate(&mut self, ptr: *mut u8, old_size: usize, size: usize, align: PowerOfTwo) -> *mut u8 {
+    unsafe fn reallocate(&mut self, _ptr: *mut u8, _old_size: usize, _size: usize, _align: PowerOfTwo) -> *mut u8 {
         match self.schedule.remove(0) {
             MockAllocResult::Reallocate(ptr) => ptr,
             _ => panic!(),
         }
     }
-    unsafe fn reallocate_inplace(&mut self, ptr: *mut u8, old_size: usize, size: usize, align: PowerOfTwo) -> usize {
+    unsafe fn reallocate_inplace(&mut self, _ptr: *mut u8, _old_size: usize, _size: usize, _align: PowerOfTwo) -> usize {
         match self.schedule.remove(0) {
             MockAllocResult::ReallocateInplace(size) => size,
             _ => panic!(),
@@ -177,16 +174,16 @@ impl<A: OwnedAllocator> BlockAlloc<A> {
     }
 }
 unsafe impl<A: OwnedAllocator> OwnedAllocator for BlockAlloc<A> {
-    unsafe fn deallocate(&mut self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) {}
-    unsafe fn allocate(&mut self, size: usize, align: PowerOfTwo) -> *mut u8 {
+    unsafe fn deallocate(&mut self, _ptr: *mut u8, _old_size: usize, _align: PowerOfTwo) {}
+    unsafe fn allocate(&mut self, size: usize, _align: PowerOfTwo) -> *mut u8 {
         let ret = self.next;
         self.next = self.next.offset(size as isize);
         return ret;
     }
-    unsafe fn reallocate(&mut self, ptr: *mut u8, old_size: usize, size: usize, align: PowerOfTwo) -> *mut u8 {
+    unsafe fn reallocate(&mut self, _ptr: *mut u8, _old_size: usize, _size: usize, _align: PowerOfTwo) -> *mut u8 {
         return null_mut();
     }
-    unsafe fn reallocate_inplace(&mut self, ptr: *mut u8, old_size: usize, size: usize, align: PowerOfTwo) -> usize {
+    unsafe fn reallocate_inplace(&mut self, _ptr: *mut u8, old_size: usize, _size: usize, _align: PowerOfTwo) -> usize {
         return old_size;
     }
 }

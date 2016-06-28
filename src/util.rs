@@ -1,19 +1,12 @@
-use std::mem::transmute;
 use std::mem::size_of;
 use std::mem::align_of;
-use alloc::heap::allocate;
-use alloc::heap::deallocate;
-use std::cmp::max;
-use std::ptr::write;
-use std::marker::PhantomData;
-use std::ptr::drop_in_place;
-use std::ptr::null;
-use std::ptr::null_mut;
 use std::fmt;
-use core::marker::{self, Unsize};
-use core::ops::{CoerceUnsized, Deref, DerefMut};
-use test::Bencher;
-use test::black_box;
+#[cfg(test)]
+use core::marker::Unsize;
+#[cfg(test)]
+use core::ops::CoerceUnsized;
+#[cfg(test)]
+use std::mem::forget;
 
 #[derive(Clone,Copy,Eq,PartialEq,Ord,PartialOrd,Debug)]
 pub struct PowerOfTwo(usize);
@@ -76,7 +69,6 @@ fn align_test() {
 pub fn distance<T>(x: *const T, y: *const T) -> usize {
     return ((y as usize) - (x as usize)) / size_of::<T>();
 }
-use std::mem::forget;
 pub struct CheckDrop {
     built: bool,
     dropped: bool,
@@ -118,34 +110,12 @@ fn must_drop_panic_test() {
     let mut tmp = CheckDrop::new();
     forget(tmp.build());
 }
-#[derive(Debug)]
-struct Foo<T: ?Sized>(usize, Box<T>);
-impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Foo<U>> for Foo<T> {}
 #[test]
 fn coerce_test() {
+    #[derive(Debug)]
+    struct Foo<T: ?Sized>(usize, Box<T>);
+    impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Foo<U>> for Foo<T> {}
     let foo1: Foo<[i32; 4]> = Foo(0xDEADBEEFDEADBEEF, Box::new([1, 2, 3, 4]));
     let foo2: Foo<[i32]> = foo1;
     println!("{:?}", foo2);
-}
-fn unbox<T>(b: Box<T>) -> T {
-    return *b;
-}
-#[inline(never)]
-pub fn do_nothing1(a: usize) -> usize {
-    return a * 1 / 1;
-}
-#[inline(never)]
-pub fn do_nothing2(a: usize) -> usize {
-    return a * 2 / 2;
-}
-#[inline(never)]
-pub fn do_nothing3(a: usize) -> usize {
-    return a * 6 / 6;
-}
-#[bench]
-pub fn bench_do_nothing(b: &mut Bencher) {
-    println!("{:x} {:x} {:x}",
-             do_nothing1 as *mut u8 as usize,
-             do_nothing2 as *mut u8 as usize,
-             do_nothing3 as *mut u8 as usize);
 }

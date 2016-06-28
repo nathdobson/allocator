@@ -1,22 +1,22 @@
-use allocator::Allocator;
 use allocator::OwnedAllocator;
-use std::collections::HashSet;
-use std::collections::HashMap;
-use std::fmt::Display;
 use std::fmt::Debug;
-use core::cell::UnsafeCell;
-use allocator::SharedAlloc;
-use heap_alloc::HeapAlloc;
-use std::ptr::null_mut;
-use std::thread::panicking;
+use std::thread;
 use interval_map::TreeIntervalMap;
 use interval_map::IntervalMap;
-use interval_map::interval;
+use interval_map::Interval;
 use std::fmt;
-use simple_alloc::MockAllocResult;
-use simple_alloc::MockAlloc;
 use allocator::ShareableAllocator;
 use util::PowerOfTwo;
+#[cfg(test)]
+use allocator::SharedAlloc;
+#[cfg(test)]
+use heap_alloc::HeapAlloc;
+#[cfg(test)]
+use std::ptr::null_mut;
+#[cfg(test)]
+use simple_alloc::MockAllocResult;
+#[cfg(test)]
+use simple_alloc::MockAlloc;
 #[derive(Clone,Copy,Eq,Ord,PartialEq,PartialOrd)]
 struct Allocation {
     ptr: *mut u8,
@@ -63,16 +63,16 @@ impl<'a, A: OwnedAllocator> CheckedAlloc<A> {
                 ptr as usize,
                 align);
         let real_size = unsafe { self.internal.usable_size(requested_size, align) };
-        let int = interval(ptr as usize, ptr as usize + real_size - 1);
+        let int = Interval::new(ptr as usize, ptr as usize + real_size - 1);
         match self.allocated.get_first(int) {
             None => {}
-            Some((other_int, other_value)) => {
+            Some((other_int, _)) => {
                 panic!("CheckedAlloc: Allocated interval {:?} while {:?} still live.", int, other_int);
             }
         }
         self.allocated.fill(int,
                             Some(Allocation {
-                                ptr:ptr,
+                                ptr: ptr,
                                 requested_size: requested_size,
                                 align: align,
                             }));
@@ -83,7 +83,7 @@ impl<'a, A: OwnedAllocator> CheckedAlloc<A> {
         match self.allocated.get_interval(ptr as usize) {
             (_, None) => {
                 panic!("CheckedAlloc: Deallocated interval {:?} is not live.",
-                       interval(ptr as usize, ptr as usize + size - 1));
+                       Interval::new(ptr as usize, ptr as usize + size - 1));
             }
             (int, Some(allocation)) => {
                 assert!(align == allocation.align, "CheckedAlloc: different alignment");
@@ -146,12 +146,12 @@ unsafe impl<A: OwnedAllocator> OwnedAllocator for CheckedAlloc<A> {
 
 impl<A: OwnedAllocator> Drop for CheckedAlloc<A> {
     fn drop(&mut self) {
-        if !self.options.ignore_leaks && !panicking() {
+        if !self.options.ignore_leaks && !thread::panicking() {
             let mut count = 0;
             let mut bytes = 0;
             for (int, allocation) in self.allocated.iter(0) {
                 match allocation {
-                    Some(allocation) => {
+                    Some(_) => {
                         count += 1;
                         bytes += int.len().unwrap();
                     }
@@ -180,6 +180,7 @@ macro_rules! alloc_panic_tests {
 	    )*
 	};
 }
+#[cfg(test)]
 fn align(x: usize) -> PowerOfTwo {
     return PowerOfTwo::new(x);
 }

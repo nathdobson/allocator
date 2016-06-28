@@ -1,38 +1,23 @@
 
-use std::cmp::min;
-use std::cmp::max;
-use std::mem::transmute;
-use std::mem::size_of;
-use std::mem::align_of;
-use std::ptr::write;
-use std::ptr::null;
-use std::ptr::drop_in_place;
+use std::cmp;
 use std::ptr::null_mut;
-use util::distance;
-use core::cell::UnsafeCell;
-use std::marker::PhantomData;
-use alloc::oom::oom;
+use util;
 use util::PowerOfTwo;
-use std::collections::HashSet;
-use std::cell::RefCell;
-use std::ptr::Unique;
-use util::CheckDrop;
-use std::cell::RefMut;
-use allocator::Allocator;
-use std::mem::replace;
-use std::ptr::copy_nonoverlapping;
-use heap_alloc::HeapAlloc;
-use allocator::SharedAlloc;
+use std::mem;
+use std::ptr;
 use allocator::OwnedAllocator;
-use rand::thread_rng;
-use checked_alloc::CheckedAlloc;
+#[cfg(test)]
+use heap_alloc::HeapAlloc;
+#[cfg(test)]
+use rand;
+#[cfg(test)]
 use rand::Rng;
-use rand::chacha::ChaChaRng;
+#[cfg(test)]
+use checked_alloc::CheckedAlloc;
+#[cfg(test)]
 use checked_alloc::CheckedAllocOptions;
+#[cfg(test)]
 use simple_alloc::LoggingAlloc;
-use test::Bencher;
-use test::black_box;
-use simple_alloc::BlockAlloc;
 fn arena_heap_alignment() -> PowerOfTwo {
     return PowerOfTwo::new(1);
 }
@@ -76,12 +61,12 @@ impl LiveBlock {
             end: null_mut(),
         };
     }
-    unsafe fn close<A: OwnedAllocator>(self, allocator: &mut A) -> UsedBlock {
-        return UsedBlock::new(self.begin, distance(self.begin, self.end));
+    unsafe fn close(self) -> UsedBlock {
+        return UsedBlock::new(self.begin, util::distance(self.begin, self.end));
     }
     unsafe fn destroy<A: OwnedAllocator>(&mut self, allocator: &mut A) {
         if !self.begin.is_null() {
-            allocator.deallocate(self.begin, distance(self.begin, self.end), arena_heap_alignment());
+            allocator.deallocate(self.begin, util::distance(self.begin, self.end), arena_heap_alignment());
             *self = LiveBlock::new();
         }
     }
@@ -95,13 +80,13 @@ impl LiveBlock {
         } else {
             let needed_size = new_end - (self.begin as usize);
             let mut new_size = (needed_size + 1).next_power_of_two();
-            new_size = min(new_size, options.recommended_max_block_size);
+            new_size = cmp::min(new_size, options.recommended_max_block_size);
             if new_size < needed_size {
                 return false;
             }
             new_size = allocator.usable_size(new_size, arena_heap_alignment());
             let real_new_size = allocator.reallocate_inplace(self.begin,
-                                                             distance(self.begin, self.end),
+                                                             util::distance(self.begin, self.end),
                                                              new_size,
                                                              arena_heap_alignment());
             self.end = self.begin.offset(real_new_size as isize);
@@ -119,8 +104,8 @@ impl LiveBlock {
                                             align: PowerOfTwo)
                                             -> bool {
         let actual_needed_size = needed_size + align.into() - 1;
-        let actual_recommended_size = min(options.recommended_max_block_size, recommended_size);
-        let mut new_size = max(actual_needed_size, actual_recommended_size);
+        let actual_recommended_size = cmp::min(options.recommended_max_block_size, recommended_size);
+        let mut new_size = cmp::max(actual_needed_size, actual_recommended_size);
         new_size = allocator.usable_size(new_size, arena_heap_alignment());
         self.begin = allocator.allocate(new_size, arena_heap_alignment());
         if self.begin.is_null() {
@@ -169,7 +154,7 @@ impl<A: Default + OwnedAllocator> Default for Arena<A> {
     }
 }
 unsafe impl<A: OwnedAllocator> OwnedAllocator for Arena<A> {
-    unsafe fn deallocate(&mut self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) {
+    unsafe fn deallocate(&mut self, ptr: *mut u8, old_size: usize, _align: PowerOfTwo) {
         if self.live.next == ptr.offset(old_size as isize) {
             self.live.next = ptr;
         }
@@ -179,7 +164,7 @@ unsafe impl<A: OwnedAllocator> OwnedAllocator for Arena<A> {
         if self.live.initialized() {
             let result = self.live.try_allocate(&mut self.allocator, &self.options, size, align);
             if result.is_null() {
-                let old_block = replace(&mut self.live, LiveBlock::new()).close(&mut self.allocator);
+                let old_block = mem::replace(&mut self.live, LiveBlock::new()).close();
                 next_block_size = (old_block.size + 1).next_power_of_two();
                 self.used.push(old_block);
             } else {
@@ -200,7 +185,7 @@ unsafe impl<A: OwnedAllocator> OwnedAllocator for Arena<A> {
             return ptr;
         } else {
             let ret = self.allocate(new_size, align);
-            copy_nonoverlapping(ptr, ret, old_size);
+            ptr::copy_nonoverlapping(ptr, ret, old_size);
             return ret;
         }
     }
@@ -208,7 +193,7 @@ unsafe impl<A: OwnedAllocator> OwnedAllocator for Arena<A> {
                                  ptr: *mut u8,
                                  old_size: usize,
                                  new_size: usize,
-                                 align: PowerOfTwo)
+                                 _align: PowerOfTwo)
                                  -> usize {
         if self.live.next == ptr.offset(old_size as isize) {
             if self.live.try_ensure_end(&mut self.allocator, &self.options, ptr as usize + new_size) {
@@ -218,15 +203,15 @@ unsafe impl<A: OwnedAllocator> OwnedAllocator for Arena<A> {
         }
         return old_size;
     }
-    unsafe fn extendable_size(&self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) -> usize {
+    unsafe fn extendable_size(&self, ptr: *mut u8, old_size: usize, _align: PowerOfTwo) -> usize {
         if self.live.next == ptr.offset(old_size as isize) {
-            return distance(self.live.next, self.live.end);
+            return util::distance(self.live.next, self.live.end);
         } else {
             return 0;
         }
     }
 
-    unsafe fn usable_size(&self, size: usize, align: PowerOfTwo) -> usize {
+    unsafe fn usable_size(&self, size: usize, _align: PowerOfTwo) -> usize {
         return size;
     }
 }
@@ -243,7 +228,7 @@ impl<A: OwnedAllocator> Drop for Arena<A> {
 #[test]
 fn arena_random_test() {
     unsafe {
-        let mut rng = ChaChaRng::new_unseeded();
+        let mut rng = rand::XorShiftRng::new_unseeded();
         for _ in 0..3 {
             let inner_options = Default::default();
             let arena_options = ArenaOptions {
@@ -278,7 +263,9 @@ fn arena_random_test() {
         }
     }
 }
+#[cfg(benchmark)]
 const BENCH_COUNT: usize = 1024 * 256;
+#[cfg(benchmark)]
 fn run_benchmark_alloc<A: OwnedAllocator>(mut a: A) {
     unsafe {
         for i in 0..BENCH_COUNT {
@@ -289,6 +276,7 @@ fn run_benchmark_alloc<A: OwnedAllocator>(mut a: A) {
     }
 }
 #[inline(never)]
+#[cfg(benchmark)]
 pub fn run_benchmark_manual() {
     unsafe {
         let align = PowerOfTwo::new(1);
@@ -301,30 +289,30 @@ pub fn run_benchmark_manual() {
         HeapAlloc::default().deallocate(buffer, BENCH_COUNT, align);
     }
 }
-//#[inline(never)]
-//fn run_benchmark_arena_alloc() {
+// #[inline(never)]
+// fn run_benchmark_arena_alloc() {
 //    run_benchmark_alloc(Arena::<HeapAlloc>::new(HeapAlloc,
 //                                                ArenaOptions {
 //                                                    start_block_size: BENCH_COUNT,
 //                                                    recommended_max_block_size: BENCH_COUNT,
 //                                                    ..ArenaOptions::default()
 //                                                }))
-//}
-//#[bench]
-//fn benchmark_arena_alloc(b: &mut Bencher) {
+// }
+// #[bench]
+// fn benchmark_arena_alloc(b: &mut Bencher) {
 //    b.iter(|| run_benchmark_arena_alloc());
-//}
-//#[inline(never)]
-//fn run_benchmark_block_alloc() {
+// }
+// #[inline(never)]
+// fn run_benchmark_block_alloc() {
 //    unsafe { run_benchmark_alloc(BlockAlloc::<HeapAlloc>::new(HeapAlloc, BENCH_COUNT)) }
-//}
-//#[bench]
-//fn benchmark_block_alloc(b: &mut Bencher) {
+// }
+// #[bench]
+// fn benchmark_block_alloc(b: &mut Bencher) {
 //
 //    b.iter(|| run_benchmark_block_alloc());
 //
-//}
-//#[bench]
-//fn benchmark_manual(b: &mut Bencher) {
+// }
+// #[bench]
+// fn benchmark_manual(b: &mut Bencher) {
 //    b.iter(|| run_benchmark_manual());
-//}
+// }

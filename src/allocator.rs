@@ -1,15 +1,5 @@
 use std::cell::UnsafeCell;
-use std::marker::PhantomData;
 use util::PowerOfTwo;
-use alloc::oom;
-use alloc::heap::{allocate, deallocate, reallocate, reallocate_inplace, usable_size, EMPTY};
-use std::ops::Range;
-use std::mem::size_of;
-use std::ptr::write;
-use std::mem::size_of_val;
-use std::mem::align_of_val;
-use std::intrinsics::drop_in_place;
-use std::ptr::read;
 // Intended allocator implementations:
 // system allocator
 // c malloc/free
@@ -39,17 +29,17 @@ use std::ptr::read;
 // allocate one buffer and an "is free" bitvector
 //
 //
-//pub unsafe trait BoxAllocator{
+// pub unsafe trait BoxAllocator{
 //    unsafe fn allocate_box(&mut self,size:usize,align:PowerOfTwo) -> *mut u8;
 //    unsafe fn deallocate_box(&mut self,ptr:*mut u8,size:usize,align:PowerOfTwo) -> *mut u8;
-//}
-//struct AllocRawVec{
+// }
+// struct AllocRawVec{
 //    unsafe fn allocate_vec(&mut self,count:usize,size:usize,align:PowerOfTwo) -> *mut u8;
-//    unsafe fn 
-//}
-//pub unsafe trait VecAllocator{
+//    unsafe fn
+// }
+// pub unsafe trait VecAllocator{
 //    unsafe fn allocate(&mut self,
-//}
+// }
 pub unsafe trait OwnedAllocator {
     unsafe fn allocate(&mut self, new: usize, align: PowerOfTwo) -> *mut u8;
     unsafe fn reallocate(&mut self, ptr: *mut u8, old_size: usize, new_size: usize, align: PowerOfTwo) -> *mut u8;
@@ -61,9 +51,12 @@ pub unsafe trait OwnedAllocator {
                                  -> usize;
     unsafe fn deallocate(&mut self, ptr: *mut u8, old_size: usize, align: PowerOfTwo);
     unsafe fn extendable_size(&self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) -> usize {
+        let _ = ptr;
+        let _ = align;
         return old_size;
     }
     unsafe fn usable_size(&self, size: usize, align: PowerOfTwo) -> usize {
+        let _ = align;
         return size;
     }
 }
@@ -111,7 +104,7 @@ unsafe impl<'a, A> OwnedAllocator for &'a SharedAlloc<A>
         return (*self.get()).deallocate(ptr, old_size, align);
     }
     unsafe fn extendable_size(&self, ptr: *mut u8, old_size: usize, align: PowerOfTwo) -> usize {
-        return old_size;
+        return (*self.get()).extendable_size(ptr, old_size, align);
     }
     unsafe fn usable_size(&self, size: usize, align: PowerOfTwo) -> usize {
         return (*self.get()).usable_size(size, align);

@@ -28,7 +28,7 @@ unsafe impl OwnedAllocator for HeapAlloc {
     unsafe fn deallocate(&mut self, ptr:*mut u8, old_size:usize, align: PowerOfTwo) {
         return deallocate(ptr,old_size, align.into());
     }
-    unsafe fn extendable_size(&self, ptr:*mut u8, old_size:usize, align: PowerOfTwo) -> usize {
+    unsafe fn extendable_size(&self, _ptr:*mut u8, old_size:usize, _align: PowerOfTwo) -> usize {
         return old_size;
     }
     unsafe fn usable_size(&self, size: usize, align: PowerOfTwo) -> usize {

@@ -1,28 +1,17 @@
-use std::marker::PhantomData;
-use std::ops::Range;
-use std::mem::size_of;
-use std::ops::Shl;
-use std::ops::Shr;
-use std::ops::Sub;
-use std::num::One;
-use std::num::Zero;
-use std::fmt::Debug;
-use std::fmt::Formatter;
-use std::fmt::Error;
-use std::fmt::Binary;
-use std::fmt::UpperHex;
-use std::fmt::LowerHex;
-use std::ops::BitAnd;
-use std::ops::BitOr;
-use std::ops::Add;
-use std::borrow::BorrowMut;
-use std::borrow::Borrow;
-use std::hash::Hash;
-use std::collections::HashMap;
-use rand::thread_rng;
-use std::mem::swap;
-use rand::Rng;
+use std::marker;
+use std::mem;
+use std::ops;
+use std::num;
 use std::fmt;
+use std::borrow::BorrowMut;
+#[cfg(test)]
+use std::hash::Hash;
+#[cfg(test)]
+use std::collections::HashMap;
+#[cfg(test)]
+use rand;
+#[cfg(test)]
+use rand::Rng;
 pub trait Bounded {
     fn min_value() -> Self;
     fn max_value() -> Self;
@@ -68,9 +57,9 @@ impl Bounded for usize {
     }
 }
 pub trait FixedUnsigned
-    : One + Zero + Shl<usize, Output = Self> + Ord + Copy + BitAnd<Self, Output = Self> +
-    Sub<Self,Output=Self> + BitOr<Self,Output=Self> + Shr<usize,Output=Self> + Bounded +
-    Binary + LowerHex + UpperHex + PartialOrd<Self> + Add<Self,Output=Self>
+    : num::One + num::Zero + ops::Shl<usize, Output = Self> + Ord + Copy + ops::BitAnd<Self, Output = Self> +
+    ops::Sub<Self,Output=Self> + ops::BitOr<Self,Output=Self> + ops::Shr<usize,Output=Self> + Bounded +
+    fmt::Binary + fmt::LowerHex + fmt::UpperHex + PartialOrd<Self> + ops::Add<Self,Output=Self>
     {
     fn overflowing_add(self, other: Self) -> (Self, bool);
     fn overflowing_sub(self, other: Self) -> (Self, bool);
@@ -150,7 +139,7 @@ impl FixedUnsigned for usize {
 fn high_bit<T>() -> T
     where T: FixedUnsigned
 {
-    (T::one() << (8 * size_of::<T>() - 1))
+    (T::one() << (8 * mem::size_of::<T>() - 1))
 }
 fn view_round_down<T>(x: T) -> (bool, T)
     where T: FixedUnsigned
@@ -197,18 +186,17 @@ pub struct Interval<T> {
 impl<T> Interval<T>
     where T: FixedUnsigned
 {
-    pub fn subset(self, other: Self) -> bool {
-        return self.front >= other.front && self.back <= other.back;
-    }
     pub fn len(self) -> Option<T> {
         return (self.back - self.front).checked_add(T::one());
     }
 }
+#[cfg(test)]
 #[derive(PartialEq,Eq,Debug)]
 pub enum IntervalIter<T> {
     Bounded(T, T),
     Unbounded(Option<T>),
 }
+#[cfg(test)]
 impl<T> Interval<T>
     where T: FixedUnsigned
 {
@@ -222,6 +210,7 @@ impl<T> Interval<T>
         }
     }
 }
+#[cfg(test)]
 impl<T> Iterator for IntervalIter<T>
     where T: FixedUnsigned
 {
@@ -250,16 +239,24 @@ impl<T> Iterator for IntervalIter<T>
         }
     }
 }
-pub fn interval<T>(front: T, back: T) -> Interval<T> {
+fn interval<T>(front: T, back: T) -> Interval<T> {
     return Interval {
         front: front,
         back: back,
     };
 }
-impl<T> Debug for Interval<T>
-    where T: LowerHex + UpperHex
+impl<T> Interval<T> {
+    pub fn new(front: T, back: T) -> Self {
+        return Interval {
+            front: front,
+            back: back,
+        };
+    }
+}
+impl<T> fmt::Debug for Interval<T>
+    where T: fmt::LowerHex + fmt::UpperHex
 {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "[0x{:x}, 0x{:x}]", self.front, self.back)
     }
 }
@@ -294,7 +291,7 @@ pub struct IntervalMapIter<'a, K, V: 'a, Map: 'a>
 {
     map: &'a Map,
     next: Option<K>,
-    phantom: PhantomData<&'a V>,
+    phantom: marker::PhantomData<&'a V>,
 }
 impl<'a, K, V, Map> IntervalMapIter<'a, K, V, Map>
     where Map: IntervalMap<'a, K, V>,
@@ -305,7 +302,7 @@ impl<'a, K, V, Map> IntervalMapIter<'a, K, V, Map>
         return IntervalMapIter {
             map: map,
             next: Some(key),
-            phantom: PhantomData,
+            phantom: marker::PhantomData,
         };
     }
 }
@@ -334,7 +331,7 @@ pub enum TreeIntervalMap<K, V>
 {
     Node(Box<(TreeIntervalMap<K, V>, TreeIntervalMap<K, V>)>),
     Empty,
-    Leaf(V, PhantomData<K>),
+    Leaf(V, marker::PhantomData<K>),
 }
 impl<'a, K, V> TreeIntervalMap<K, V>
     where K: FixedUnsigned,
@@ -362,7 +359,7 @@ impl<'a, K: 'a, V: 'a> IntervalMap<'a, K, V> for TreeIntervalMap<K, V>
         if interval.front == K::min_value() && interval.back == K::max_value() {
             match value {
                 None => *self = TreeIntervalMap::Empty,
-                Some(value) => *self = TreeIntervalMap::Leaf(value, PhantomData),
+                Some(value) => *self = TreeIntervalMap::Leaf(value, marker::PhantomData),
             }
         } else {
             match *self {
@@ -431,9 +428,9 @@ impl<'a, K: 'a, V: 'a> IntervalMap<'a, K, V> for TreeIntervalMap<K, V>
         }
     }
 }
-impl<'a, K: 'a, V: 'a> Debug for TreeIntervalMap<K, V>
+impl<'a, K: 'a, V: 'a> fmt::Debug for TreeIntervalMap<K, V>
     where K: FixedUnsigned,
-          V: Copy + Eq + Debug
+          V: Copy + Eq + fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (interval, value) in self.iter(K::min_value()) {
@@ -447,7 +444,9 @@ impl<'a, K: 'a, V: 'a> Debug for TreeIntervalMap<K, V>
         return Ok(());
     }
 }
+#[cfg(test)]
 struct HashIntervalMap<K: Hash, V: Copy>(HashMap<K, V>);
+#[cfg(test)]
 impl<'a, K: 'a, V: 'a> HashIntervalMap<K, V>
     where K: Hash + FixedUnsigned,
           V: Copy + Eq
@@ -456,6 +455,7 @@ impl<'a, K: 'a, V: 'a> HashIntervalMap<K, V>
         return HashIntervalMap(HashMap::new());
     }
 }
+#[cfg(test)]
 impl<'a, K: 'a, V: 'a> IntervalMap<'a, K, V> for HashIntervalMap<K, V>
     where K: Hash + FixedUnsigned,
           V: Copy + Eq
@@ -538,37 +538,39 @@ macro_rules! same {
         }
     }
 }
+#[cfg(test)]
 struct CompareIterator<I1, I2>
     where I1: Iterator,
           I2: Iterator<Item = I1::Item>,
-          I1::Item: Eq + Debug
+          I1::Item: Eq + fmt::Debug
 {
     iter1: I1,
     iter2: I2,
 }
+#[cfg(test)]
 impl<I1, I2> Iterator for CompareIterator<I1, I2>
     where I1: Iterator,
           I2: Iterator<Item = I1::Item>,
-          I1::Item: Eq + Debug
+          I1::Item: Eq + fmt::Debug
 {
     type Item = I1::Item;
     fn next(&mut self) -> Option<I1::Item> {
         return same!("CompareIterator {:?} != {:?}", self.iter1.next(), self.iter2.next());
     }
 }
+#[cfg(test)]
 struct CompareIntervalMap<K, V, M1, M2>
-    where M1: for<'a> IntervalMap<'a, K, V>,
-          M2: for<'a> IntervalMap<'a, K, V>,
-          K: FixedUnsigned,
+    where K: FixedUnsigned,
           V: Eq
 {
     first: M1,
     second: M2,
-    phantom: PhantomData<(K, V)>,
+    phantom: marker::PhantomData<(K, V)>,
 }
+#[cfg(test)]
 impl<'a, K, V, M1, M2> CompareIntervalMap<K, V, M1, M2>
     where K: 'a + FixedUnsigned,
-          V: 'a + Eq + Copy + Debug,
+          V: 'a + Eq + Copy + fmt::Debug,
           M1: 'a + for<'b> IntervalMap<'b, K, V>,
           M2: 'a + for<'b> IntervalMap<'b, K, V>
 {
@@ -576,19 +578,23 @@ impl<'a, K, V, M1, M2> CompareIntervalMap<K, V, M1, M2>
         CompareIntervalMap {
             first: first,
             second: second,
-            phantom: PhantomData,
+            phantom: marker::PhantomData,
         }
     }
 }
+#[cfg(test)]
 impl<'a, K, V, M1, M2> IntervalMap<'a, K, V> for CompareIntervalMap<K, V, M1, M2>
     where K: 'a + FixedUnsigned,
-          V: 'a + Eq + Copy + Debug,
-          M1: 'a + for<'b> IntervalMap<'b, K, V>,
-          M2: 'a + for<'b> IntervalMap<'b, K, V>
+          V: 'a + Eq + Copy + fmt::Debug,
+          M1: 'a + IntervalMap<'a, K, V>,
+          M2: 'a + IntervalMap<'a, K, V>
 {
-    type Iter = IntervalMapIter<'a, K, V, Self>;
+    type Iter = CompareIterator<M1::Iter, M2::Iter>;
     fn iter(&'a self, key: K) -> Self::Iter {
-        return IntervalMapIter::new(self, key);
+        return CompareIterator {
+            iter1: self.first.iter(key),
+            iter2: self.second.iter(key),
+        };
     }
     fn get(&'a self, key: K) -> Option<V> {
         return same!("CompareIntervalMap {:?} != {:?}", self.first.get(key), self.second.get(key));
@@ -665,6 +671,7 @@ pub fn test_split() {
                          node(bottom(),
                               node(bottom(), node(bottom(), node(bottom(), node(bottom(), node(bottom(), top())))))))));
 }
+#[cfg(test)]
 fn everything<T>() -> IntervalIter<T>
     where T: FixedUnsigned
 {
@@ -699,10 +706,10 @@ fn tree_vs_hash_test() {
     let mut map: CompareIntervalMap<u8, u32, _, _> = CompareIntervalMap::new(TreeIntervalMap::new(),
                                                                              HashIntervalMap::new());
     for _ in 0u32..10 {
-        let mut front = thread_rng().gen::<u8>();
-        let mut back = thread_rng().gen::<u8>();
+        let mut front = rand::thread_rng().gen::<u8>();
+        let mut back = rand::thread_rng().gen::<u8>();
         if back < front {
-            swap(&mut front, &mut back);
+            mem::swap(&mut front, &mut back);
         }
         let int = interval(front, back);
         let value = counter;

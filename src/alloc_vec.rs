@@ -8,21 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use alloc::boxed::Box;
-use alloc::heap::EMPTY;
-use alloc::raw_vec::RawVec;
-use core::cmp::Ordering;
-use core::fmt;
-use core::hash::{self, Hash};
-use core::intrinsics::{arith_offset, assume};
-use core::iter::FromIterator;
-use core::mem;
-use core::ops::{Index, IndexMut};
-use core::ops;
-use core::ptr;
-use core::slice;
-use alloc_raw_vec::AllocRawVec;
+use alloc::heap;
+use std::cmp;
+use std::fmt;
+use std::hash::{self, Hash};
+use std::intrinsics;
+use std::iter;
+use std::mem;
+use std::ops::{self, Index, IndexMut};
+use std::ptr;
+use std::slice;
 use collections::range::RangeArgument;
+use alloc_raw_vec::AllocRawVec;
 use allocator::OwnedAllocator;
 use allocator::Allocator;
 use alloc_box::AllocBox;
@@ -519,7 +516,7 @@ impl<T, A: OwnedAllocator> ops::Deref for AllocVec<T, A> {
     fn deref(&self) -> &[T] {
         unsafe {
             let p = self.buf.ptr();
-            assume(!p.is_null());
+            intrinsics::assume(!p.is_null());
             slice::from_raw_parts(p, self.len)
         }
     }
@@ -528,12 +525,12 @@ impl<T, A: OwnedAllocator> ops::DerefMut for AllocVec<T, A> {
     fn deref_mut(&mut self) -> &mut [T] {
         unsafe {
             let ptr = self.buf.ptr();
-            assume(!ptr.is_null());
+            intrinsics::assume(!ptr.is_null());
             slice::from_raw_parts_mut(ptr, self.len)
         }
     }
 }
-impl<T, A: OwnedAllocator + Default> FromIterator<T> for AllocVec<T, A> {
+impl<T, A: OwnedAllocator + Default> iter::FromIterator<T> for AllocVec<T, A> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> AllocVec<T, A> {
         // Unroll the first iteration, as the vector is going to be
@@ -581,10 +578,10 @@ impl<T, A: OwnedAllocator> IntoIterator for AllocVec<T, A> {
     fn into_iter(mut self) -> AllocIntoIter<T, A> {
         unsafe {
             let ptr = self.as_mut_ptr();
-            assume(!ptr.is_null());
+            intrinsics::assume(!ptr.is_null());
             let begin = ptr as *const T;
             let end = if mem::size_of::<T>() == 0 {
-                arith_offset(ptr as *const i8, self.len() as isize) as *const T
+                intrinsics::arith_offset(ptr as *const i8, self.len() as isize) as *const T
             } else {
                 ptr.offset(self.len() as isize) as *const T
             };
@@ -660,7 +657,7 @@ impl<T: PartialEq, A: OwnedAllocator> PartialEq for AllocVec<T, A> {
 }
 impl<T: PartialOrd, A: OwnedAllocator> PartialOrd for AllocVec<T, A> {
     #[inline]
-    fn partial_cmp(&self, other: &AllocVec<T, A>) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &AllocVec<T, A>) -> Option<cmp::Ordering> {
         PartialOrd::partial_cmp(&**self, &**other)
     }
 }
@@ -668,7 +665,7 @@ impl<T: Eq, A: OwnedAllocator> Eq for AllocVec<T, A> {}
 
 impl<T: Ord, A: OwnedAllocator> Ord for AllocVec<T, A> {
     #[inline]
-    fn cmp(&self, other: &AllocVec<T, A>) -> Ordering {
+    fn cmp(&self, other: &AllocVec<T, A>) -> cmp::Ordering {
         Ord::cmp(&**self, &**other)
     }
 }
@@ -758,10 +755,10 @@ impl<T, A: OwnedAllocator> Iterator for AllocIntoIter<T, A> {
                     // purposefully don't use 'ptr.offset' because for
                     // vectors with 0-size elements this would return the
                     // same pointer.
-                    self.ptr = arith_offset(self.ptr as *const i8, 1) as *const T;
+                    self.ptr = intrinsics::arith_offset(self.ptr as *const i8, 1) as *const T;
 
                     // Use a non-null pointer value
-                    Some(ptr::read(EMPTY as *mut T))
+                    Some(ptr::read(heap::EMPTY as *mut T))
                 } else {
                     let old = self.ptr;
                     self.ptr = self.ptr.offset(1);
@@ -795,10 +792,10 @@ impl<T, A: OwnedAllocator> DoubleEndedIterator for AllocIntoIter<T, A> {
             } else {
                 if mem::size_of::<T>() == 0 {
                     // See above for why 'ptr.offset' isn't used
-                    self.end = arith_offset(self.end as *const i8, -1) as *const T;
+                    self.end = intrinsics::arith_offset(self.end as *const i8, -1) as *const T;
 
                     // Use a non-null pointer value
-                    Some(ptr::read(EMPTY as *mut T))
+                    Some(ptr::read(heap::EMPTY as *mut T))
                 } else {
                     self.end = self.end.offset(-1);
 
